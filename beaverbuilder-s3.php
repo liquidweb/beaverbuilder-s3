@@ -13,28 +13,44 @@
  */
 
 /**
- * Use the local filesystem rather than Amazon S3 for Beaver Builder's cache directory.
+ * Keep custom Beaver Builder icons on the local filesystem.
  *
- * The S3 Uploads plugin filters adds S3_Uploads::filter_upload_dir() onto the upload_dir filter,
- * which can have adverse effects on Beaver Builder's cache since it's not intended to be written
- * to an object store like S3.
+ * Since PHP's glob() can't work properly on remote files, custom icon sets fail when S3 is in the
+ * mix. This filter undoes the S3 rewriting when calling FLBuilderModel::get_cache_dir( 'icons' ).
  *
- * Fortunately, the S3 Uploads plugin exposes a method to retrieve the original, unmodified values
- * from wp_upload_dir().
+ * @link http://kb.wpbeaverbuilder.com/article/110-enable-disable-or-import-new-icon-sets
  *
  * @param array $dirs Array of upload directory data with keys of 'path', 'url', 'subdir,
  *                    'basedir', and 'error'.
- * @return array The filtered $dirs array.
  */
-function beaverbuilders3_get_upload_dir( $dirs ) {
+function beaverbuilders3_get_icon_dir( $dirs ) {
 
-	// Return early if the S3 Uploads class doesn't exist.
-	if ( ! class_exists( 'S3_Uploads' ) || ! method_exists( 'S3_Uploads', 'get_instance' ) ) {
+	// Something's odd, let's not mess it up further.
+	if ( ! isset( $dirs['path'] ) ) {
 		return $dirs;
 	}
 
-	$s3 = S3_Uploads::get_instance();
+	// Only operate on paths that end in '/icons/'.
+	if ( '/icons/' !== substr( trailingslashit( $dirs['path'] ), -7 ) ) {
+		return $dirs;
+	}
 
-	return $s3->get_original_upload_dir();
+	/*
+	 * Determine where Beaver Builder icon fonts should be stored.
+	 *
+	 * By default, this will be in wp-content/icons, but if you would like to preserve the default
+	 * wp-content/uploads/bb-plugin/icons path, use something like this in your filter:
+	 *
+	 *   $path = wp_parse_url( $dirs['path'], PHP_URL_PATH );
+	 *
+	 * @param string $path The path relative to the wp-content directory.
+	 */
+	$path = apply_filters( 'beaverbuilders3_icon_path', '/icons/' );
+	$path = trailingslashit( $path );
+
+	$dirs['path'] = WP_CONTENT_DIR . $path;
+	$dirs['url']  = content_url( $path );
+
+	return $dirs;
 }
-add_filter( 'fl_builder_get_upload_dir', 'beaverbuilders3_get_upload_dir' );
+add_filter( 'fl_builder_get_cache_dir', 'beaverbuilders3_get_icon_dir' );
